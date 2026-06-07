@@ -61,6 +61,7 @@ KUBECTX_FAVORITES=(orbstack k3d-akuity-customer 'k3d-akuity-customer-*')
 | `KUBECTX_FAVORITES_TOGGLE_KEY` | `tab` | Key that toggles favorites ↔ all. |
 | `KUBECTX_FAVORITES_FZF_OPTS` | `--height=40% --reverse` | Extra options passed to `fzf`. |
 | `KUBECTX_FAVORITES_OVERRIDE` | *(unset)* | If set, also alias `kubectx` itself to the favorites picker. |
+| `KUBECTX_CURRENT_FGCOLOR` / `KUBECTX_CURRENT_BGCOLOR` | *(bold green)* | Color of the current context. Default matches the kubectx Go binary (`FgGreen`+`Bold`). These vars are deprecated in kubectx's Go binary but still honored here as an override. |
 
 ## Usage
 
@@ -87,14 +88,14 @@ With `KUBECTX_FAVORITES_OVERRIDE=1`, all of the above also work as `kubectx …`
 - The picker is fed from a favorites file; `Tab` is bound to an fzf `transform`
   that reads the current `$FZF_PROMPT`, then `change-prompt` + `reload`s from
   the all-contexts file (and back).
+- The current context is wrapped in ANSI color and rendered with `fzf --ansi`,
+  so it stands out the way kubectx highlights it.
 - Everything except the no-arg case is delegated straight to `kubectx`, so
   flags, completion, and direct switches behave identically.
 
 ## Limitations
 
 - zsh only.
-- Doesn't reproduce kubectx's "current context" highlight inside the picker
-  (the source list is the plain, piped form).
 - Rebinds `Tab` inside the picker (normally fzf's multi-select toggle) — fine
   here since this is a single-select switcher.
 

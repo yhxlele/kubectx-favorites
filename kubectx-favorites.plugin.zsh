@@ -29,6 +29,10 @@ typeset -ga KUBECTX_FAVORITES
 # Extra options passed to fzf (word-split on spaces).
 : ${KUBECTX_FAVORITES_FZF_OPTS='--height=40% --reverse'}
 
+# Current-context highlight defaults to bold green, matching the kubectx Go
+# binary's ActiveItemColor (color.FgGreen + Bold). Override with the (Go-
+# deprecated, bash-era) KUBECTX_CURRENT_FGCOLOR / KUBECTX_CURRENT_BGCOLOR vars.
+
 # KUBECTX_FAVORITES_OVERRIDE=1  -> also define `kubectx` as an alias of `kctx`.
 
 # ---- internals --------------------------------------------------------------
@@ -37,6 +41,25 @@ typeset -ga KUBECTX_FAVORITES
 # whatever kubeconfigs kubectx sees). Piping strips color -> plain newlines.
 _kctx_all_contexts() {
   command kubectx 2>/dev/null | command cat
+}
+
+# Re-emit the context list from stdin, wrapping the current context in ANSI color
+# so fzf (--ansi) highlights it the way kubectx does. Defaults to bold green to
+# match the kubectx Go binary (ActiveItemColor = color.FgGreen + Bold); still
+# honors the bash-era KUBECTX_CURRENT_FGCOLOR / KUBECTX_CURRENT_BGCOLOR override.
+_kctx_mark_current() {
+  emulate -L zsh
+  local cur="$1" line
+  local hl="${KUBECTX_CURRENT_FGCOLOR}${KUBECTX_CURRENT_BGCOLOR}"
+  [[ -z "$hl" ]] && hl=$'\e[1;32m'   # bold green — matches kubectx
+  local rst=$'\e[0m'
+  while IFS= read -r line; do
+    if [[ -n "$cur" && "$line" == "$cur" ]]; then
+      print -r -- "${hl}${line}${rst}"
+    else
+      print -r -- "$line"
+    fi
+  done
 }
 
 # Favorites resolved against the live context list, glob-aware, de-duplicated,
@@ -89,23 +112,28 @@ kctx() {
 
   # Two source files; Tab swaps which one feeds the picker (and flips the prompt
   # as a visual cue). $FZF_PROMPT is read in the transform to decide direction.
-  local favfile allfile choice
+  # The current context is highlighted via ANSI, rendered by fzf --ansi.
+  local favfile allfile choice cur
   favfile=$(mktemp) || return
   allfile=$(mktemp) || { rm -f "$favfile"; return; }
-  print -l "${favs[@]}" > "$favfile"
-  _kctx_all_contexts    > "$allfile"
+  cur=$(command kubectx -c 2>/dev/null)
+  print -l "${favs[@]}" | _kctx_mark_current "$cur" > "$favfile"
+  _kctx_all_contexts    | _kctx_mark_current "$cur" > "$allfile"
 
   local fp="$KUBECTX_FAVORITES_PROMPT" ap="$KUBECTX_FAVORITES_ALL_PROMPT"
   local key="$KUBECTX_FAVORITES_TOGGLE_KEY"
   local bind="${key}:transform:[ \"\$FZF_PROMPT\" = '${fp}' ] && echo 'change-prompt(${ap})+reload(cat \"${allfile}\")' || echo 'change-prompt(${fp})+reload(cat \"${favfile}\")'"
 
-  choice=$(fzf ${=KUBECTX_FAVORITES_FZF_OPTS} \
+  choice=$(fzf --ansi ${=KUBECTX_FAVORITES_FZF_OPTS} \
     --prompt="$fp" \
     --header="⏎ switch · ${key}: favorites ↔ all" \
     --bind "$bind" \
     < "$favfile")
   rm -f "$favfile" "$allfile"
 
+  # fzf --ansi already returns the plain text, but strip any SGR defensively.
+  setopt local_options extended_glob
+  choice=${choice//$'\e'\[[0-9;]#m/}
   [[ -n "$choice" ]] && command kubectx "$choice"
 }
 
